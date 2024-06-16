@@ -1,14 +1,14 @@
 function parse_query() {
     local query="$1"
-    
+
     local collection=$(echo "$query" | awk '{print $4}')
-    local conditions=$(echo "$query" | sed -n '/WHERE/,/ORDER BY/p' | sed '1d;$d' | tr '\n' '|')
-    local order_by=$(echo "$query" | sed -n '/ORDER BY/p' | cut -d' ' -f3-)
-    local limit=$(echo "$query" | sed -n '/LIMIT/p' | cut -d' ' -f2)
+    local conditions=$(echo "$query" | sed -n '/WHERE/{s/.*WHERE //;s/ ORDER BY.*//;p}')
+    local order_by=$(echo "$query" | sed -n '/ORDER BY/{s/.*ORDER BY //;s/ LIMIT.*//;p}')
+    local limit=$(echo "$query" | sed -n '/LIMIT/{s/.*LIMIT //;p}')
 
     echo "Collection: $collection"
     echo "Conditions: $conditions"
-    echo "Order by: $order_by"
+    echo "Order By: $order_by"
     echo "Limit: $limit"
 }
 

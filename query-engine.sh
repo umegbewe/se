@@ -6,15 +6,24 @@ function evaluate_conditions() {
     local conditions="$3"
 
     IFS='|' read -ra condition_array <<< "$conditions"
-    for condition in "${condition_array[@]}"; do 
-        local field=$(echo "$condition" | cut -d' ' -f1)
-        local operator=$(echo "$condition" | cut -d' ' -f2)
-        local value=$(echo "$condition" | cut -d' ' -f3-)
+    for condition in "${condition_array[@]}"; do
+        if [[ "$condition" =~ ([^=<>]+)([=<>]+)(.*) ]]; then
+            local field="${BASH_REMATCH[1]}"
+            local operator="${BASH_REMATCH[2]}"
+            local value="${BASH_REMATCH[3]}"
 
-        case "$operator" in 
-            "=" )
+            # Remove leading/trailing whitespace from field, operator, and value
+            field=$(echo "$field" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            operator=$(echo "$operator" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            value=$(echo "$value" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+            # Remove quotes from the value if present
+            value=$(echo "$value" | sed "s/^['\"]//;s/['\"]$//")
+
+            case "$operator" in
+                "=")
                 if [[ "$data" != "$value" ]]; then
-                    return 1
+                        return 1
                 fi
                 ;;
             ">" )
@@ -42,6 +51,10 @@ function evaluate_conditions() {
                 return 1
             ;;
         esac
+        else
+            echo "Invalid condition: $condition"
+            return 1
+        fi
     done
     return 0
 }
@@ -66,14 +79,21 @@ function execute_query() {
 
     local record_files=""
     for condition in $conditions; do
-        local field=$(echo "$condition" | cut -d' ' -f1)
-        local operator=$(echo "$condition" | cut -d' ' -f2)
-        local value=$(echo "$condition" | cut -d' ' -f3-)
+        if [[ "$condition" =~ ([^=<>]+)([=<>]+)(.*) ]]; then
+            local field="${BASH_REMATCH[1]}"
+            local operator="${BASH_REMATCH[2]}"
+            local value="${BASH_REMATCH[3]}"
 
-        if [[ " $indexed_fields " == *" $field "* ]]; then
-            local index_file="${DATA_DIR}/${collection}/indexes/${field}"
-            local matching_files=$(grep "^$value:" "$index_file" | cut -d':' -f2-)
-            record_files+=" $matching_files"
+            field=$(echo "$field" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            operator=$(echo "$operator" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            value=$(echo "$value" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            value=$(echo "$value" | sed "s/^['\"]//;s/['\"]$//")
+
+            if [[ " $indexed_fields " == *" $field "* ]]; then
+                local index_file="${DATA_DIR}/${collection}/indexes/${field}"
+                local matching_files=$(grep "^$value:" "$index_file" | cut -d':' -f2-)
+                record_files+=" $matching_files"
+            fi
         fi
     done
 
@@ -83,20 +103,19 @@ function execute_query() {
 
     local filtered_records=""
     for record_file in $record_files; do
-        local record_id=$(basename "$record_file" | sed "s/^$RECORD_FILE_PREFIX//")
         local record_data=$(cat "$record_file")
         local data=$(get_data "$record_data")
         local data_type=$(get_value_type "$record_data")
 
         if evaluate_conditions "$data" "$data_type" "$conditions"; then
-            filtered_records+="$record_id|$data|$data_type\n"
+            filtered_records+="$data|$data_type\n"
         fi
     done
 
     if [[ -n "$order_by" ]]; then
         local order_field=$(echo "$order_by" | cut -d' ' -f1)
         local order_direction=$(echo "$order_by" | cut -d' ' -f2)
-        filtered_records=$(echo -e "$filtered_records" | sort -t'|' -k2)
+        filtered_records=$(echo -e "$filtered_records" | sort -t'|' -k1)
         if [[ "$order_direction" == "DESC" ]]; then
             filtered_records=$(echo "$filtered_records" | tac)
         fi
@@ -104,7 +123,7 @@ function execute_query() {
 
     local paginated_records=$(echo "$filtered_records" | tail -n +$((offset + 1)) | head -n "$limit")
 
-    echo "$paginated_records"
+    echo -e "$paginated_records"
 }
 
 function perform_query() {
