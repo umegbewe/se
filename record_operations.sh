@@ -18,6 +18,8 @@ function create_record() {
 
     echo "$typed_data" > "$record_file" || handle_error "Failed to create record file: $record_file"
 
+    create_index "$collection" "$record_id" "$record_file" || handle_error "Failed to create index entry for record: $record_id"
+
     echo "$record_id"
 }
 
@@ -42,7 +44,9 @@ function update_record() {
     local record_id="$2"
     local new_data="$3"
     local new_data_type="$4"
+
     local record_file="${DATA_DIR}/${collection}/${RECORD_FILE_PREFIX}${record_id}"
+    local index_file="${DATA_DIR}/${collection}/index"
 
     [[ -z "$record_id" ]] && handle_error "No record ID provided" 1
     [[ -z "$new_data" ]] && handle_error "No new data provided for updating the record" 1
@@ -52,17 +56,26 @@ function update_record() {
 
     local typed_data=$(set_type "$new_data" "$new_data_type")
     
-    echo "$typed_data" > "$record_file" || handle_error "Failed to update record file: $record_file"
+    echo "$typed_data" > "$record_file" || handle_error "Failed to update record file: $record_file" 1
+
+    # update index entry
+    sed -i "s|^$record_id:.*|$record_id:$record_file|" "$index_file" || handle_error "Failed to update index entry for record: $record_id" 1
+
     echo "Record updated successfully with ID: $record_id"   
 }
 
 function delete_record() {
     local collection="$1"
     local record_id="$2"
+
     local record_file="${DATA_DIR}/${collection}/${RECORD_FILE_PREFIX}${record_id}"
+    local index_file="${DATA_DIR}/${collection}/index"
 
     [[ -z "$record_id" ]] && handle_error "No record ID provided" 1
     [[ ! -e "$record_file" ]] && handle_error "Record file does not exist: $record_file" 1
+
+
+    sed -i "/^$record_id:.*/d" "$index_file" || handle_error "Failed to delete index entry for record: $record_id" 1
 
     rm -f "$record_file" || handle_error "Failed to delete record file: $record_file"
 
