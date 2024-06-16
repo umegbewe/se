@@ -3,9 +3,15 @@
 DATA_DIR="data"
 RECORD_FILE_PREFIX="record_"
 
+source "async_query.sh"
+source "cache_manager.sh"
+source "errors.sh"
 source "backup_restore.sh"
 source "errors.sh"
 source "index_operations.sh"
+source "logging.sh"
+source "query_parser.sh"
+source "query-engine.sh"
 source "record_operations.sh"
 source "type-system/type_definitions.sh"
 source "type-system/type_validation.sh"
@@ -40,6 +46,41 @@ function restore_data() {
     restore_backup "$backup_name"
 }
 
+function async_query_data() {
+    local query="$1"
+
+    submit_async_query "$query"
+}
+
+function check_async_query() {
+    local query_id="$1"
+
+    check_async_query_status "$query_id"
+}
+
+
+function get_async_query() {
+    local query_id="$1"
+
+    get_async_query_result "$query_id"
+}
+
+
+function query_data() {
+    local query="$1"
+    local collection=${2:-1}
+    local limit=${3:-10}
+
+    perform_query "$query" "$page" "$limit"
+}
+
+# function advanced_query_data() {
+#     local collection="$1"
+#     local query_condition="$2"
+
+#     perform_advanced_query "$collection" "$query_condition"
+# }
+
 while [[ $# -gt 0 ]]; do 
     case "$1" in
         --backup)
@@ -50,6 +91,25 @@ while [[ $# -gt 0 ]]; do
         --restore)
             backup_name="$2"
             restore_data "$backup_name"
+            shift 2
+            ;;
+        --query)
+            query="$2"
+            shift
+            page=${2:-1}
+            shift
+            limit=${2:-10}
+            query_data "$query" "$page" "$limit"
+            shift
+            ;;
+        --async-query)
+            query="$2"
+            async_query_data "$query"
+            shift 2
+            ;;
+        --check-async-query)
+            query_id="$2"
+            check_async_query "$query_id"
             shift 2
             ;;
         *)

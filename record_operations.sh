@@ -18,7 +18,8 @@ function create_record() {
 
     echo "$typed_data" > "$record_file" || handle_error "Failed to create record file: $record_file"
 
-    create_index "$collection" "$record_id" "$record_file" || handle_error "Failed to create index entry for record: $record_id"
+    create_index "$collection" "id" "$record_file" "$record_file" || handle_error "Failed to create index entry for id: $record_id"
+    create_index "$collection" "type" "$data_type" "$record_file" || handle_error "Failed to create index entry for type : $data_type on record: $record_id"
 
     echo "$record_id"
 }
