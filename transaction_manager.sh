@@ -5,7 +5,8 @@ function generate_transaction_id() {
 }
 
 function begin_transaction() {
-    local transaction_id=$(generate_transaction_id)
+    local transaction_id
+    transaction_id=$(generate_transaction_id)
     mkdir -p "${DATA_DIR}/transactions/${transaction_id}"
 
     echo "$transaction_id"
@@ -14,9 +15,10 @@ function begin_transaction() {
 function log_transaction() {
     local transaction_id="$1"
     local operation="$2"
-    local record_id="$3"
+    local collection="$3"
+    local record_id="$4"
 
-    echo "${operation}:${record_id}" >> "${DATA_DIR}/transactions/${transaction_id}/log"
+    echo "${operation}:${collection}:${record_id}" >> "${DATA_DIR}/transactions/${transaction_id}/log"
 }
 
 function commit_transaction() {
@@ -25,19 +27,25 @@ function commit_transaction() {
 
     # move records from transaction directory to data directory
     while IFS= read -r record_log; do 
-        local operation=$(echo "$record_log" | cut -d':' -f1)
-        local record_id=$(echo "$record_log" | cut -d':' -f2)
+        local operation
+        operation=$(echo "$record_log" | cut -d':' -f1)
+        local collection
+        collection=$(echo "$record_log" | cut -d':' -f2)
+        local record_id
+        record_id=$(echo "$record_log" | cut -d':' -f3)
 
         case "$operation" in
             "create")
-                mv "${transaction_dir}/${RECORD_FILE_PREFIX}${record_id}" "${DATA_DIR}/${collection}}"
+                mv "${transaction_dir}/${RECORD_FILE_PREFIX}${record_id}" "${DATA_DIR}/${collection}/" \
+                    || handle_error "Failed to commit 'create' operation for record: [$record_id] in collection: [$collection]" 1
                 ;;
             "update")
-                mv "${transaction_dir}/${RECORD_FILE_PREFIX}${record_id}" "${DATA_DIR}/${collection}}"
+                mv "${transaction_dir}/${RECORD_FILE_PREFIX}${record_id}" "${DATA_DIR}/${collection}/" \
+                    || handle_error "Failed to commit 'update' operation for record: [$record_id] in collection: [$collection]" 1
                 ;;
             "delete")
-                mv "${transaction_dir}/${RECORD_FILE_PREFIX}${record_id}" "${DATA_DIR}/${collection}}"
-                # delete_record "$record_id"
+               mv "${transaction_dir}/${RECORD_FILE_PREFIX}${record_id}" "${DATA_DIR}/${collection}/" \
+                  || handle_error "Failed to commit 'delete' operation for record ${record_id}" 1
                 ;;
             *)
                 handle_error "Invalid operation in transaction log: $operation" 1
@@ -54,17 +62,27 @@ function rollback_transaction() {
 
     # revert changes done by transaction
     while IFS= read -r record_log; do 
-        local operation=$(echo "$record_log" | cut -d':' -f1)
-        local record_id=$(echo "$record_log" | cut -d':' -f2)
+        local operation
+        operation=$(echo "$record_log" | cut -d':' -f1)
+        local collection
+        collection=$(echo "$record_log" | cut -d':' -f2)
+        local record_id
+        record_id=$(echo "$record_log" | cut -d':' -f3)
 
         case "$operation" in
             "create")
                 rm -f "${transaction_dir}/${RECORD_FILE_PREFIX}${record_id}"
                 ;;
             "update")
-                mv "${transaction_dir}/${RECORD_FILE_PREFIX}${record_id}.bak" "${DATA_DIR}/${collection}/${RECORD_FILE_PREFIX}${record_id}"                ;;
+                mv "${transaction_dir}/${RECORD_FILE_PREFIX}${record_id}.bak" \
+                   "${DATA_DIR}/${collection}/${RECORD_FILE_PREFIX}${record_id}" \
+                   || handle_error "Failed to rollback 'update' operation for record ${record_id}" 1
+                ;;
             "delete")
-                mv "${transaction_dir}/${RECORD_FILE_PREFIX}${record_id}" "${DATA_DIR}/${collection}/"                ;;
+                mv "${transaction_dir}/${RECORD_FILE_PREFIX}${record_id}" \
+                   "${DATA_DIR}/${collection}/${RECORD_FILE_PREFIX}${record_id}" \
+                   || handle_error "Failed to rollback 'delete' operation for record ${record_id}" 1
+                ;;
             *)
                 handle_error "Invalid operation in transaction log: $operation" 1
                 ;;

@@ -21,17 +21,29 @@ source "type-system/type_utils.sh"
 mkdir -p "$DATA_DIR"
 
 function load_collections {
-    local collections=$(find "$DATA_DIR" -mindepth 1 -maxdepth 1 -type d)
+    local collections
+    collections=$(find "$DATA_DIR" -mindepth 1 -maxdepth 1 -type d)
 
     for collection in $collections; do
+        local collection_name
         collection_name=$(basename "$collection")
-        echo "Loading collection: $collection_name"
+        log_message "Loading collection: $collection_name"
     
-        local records=$(find "$collection" -type f -name "${RECORD_FILE_PREFIX}*")
+        local records
+        records=$(find "$collection" -type f -name "${RECORD_FILE_PREFIX}*")
 
         for record_file in $records; do 
+            local record_id
             record_id=$(basename "$record_file" | sed "s/${RECORD_FILE_PREFIX}//")
-            create_index "$collection_name" "$record_id" "$record_file"
+
+            local typed_data
+            typed_data=$(cat "$record_file")
+            local data_type
+            data_type=$(get_value_type "$typed_data")
+
+
+            create_index "$collection_name" "id" "$record_id" "$record_file"
+            create_index "$collection_name" "type" "$data_type" "$record_file"
         done
     done
 }
@@ -73,7 +85,8 @@ function async_query_data() {
         handle_error "Query is required" 1
     fi
 
-    local query_id=$(submit_async_query "$query")
+    local query_id
+    query_id=$(submit_async_query "$query")
     if [[ $? -ne 0 ]]; then
         handle_error "Failed to submit async query: $query" 1
     fi
@@ -83,86 +96,137 @@ function async_query_data() {
 
 function check_async_query() {
     local query_id="$1"
-
     if [[ -z "$query_id" ]]; then
         handle_error "Query ID is required" 1
     fi
 
-    local status=$(check_async_query_status "$query_id")
-    if [[ $? -ne 0 ]]; then
-        handle_error "Failed to check async query status: $query_id" 1
-    fi
-
+    local status
+    status=$(check_async_query_status "$query_id")
     echo "Async query status: $status"
 }
 
-
 function get_async_query() {
     local query_id="$1"
-
     if [[ -z "$query_id" ]]; then
         handle_error "Query ID is required" 1
     fi
 
-    local result=$(get_async_query_result "$query_id")
-    if [[ $? -ne 0 ]]; then
-        handle_error "Failed to get async query result: $query_id" 1
-    fi
-
+    local result
+    result=$(get_async_query_result "$query_id")
     echo "Async query result: $result"
-    echo "$result"
 }
-
 
 function query_data() {
     local query="$1"
-    local collection=${2:-1}
-    local limit=${3:-10}
+    local page="${2:-1}"
+    local limit="${3:-10}"
 
     if [[ -z "$query" ]]; then
         handle_error "Query is required" 1
     fi
 
-    local result=$(perform_query "$query" "$collection" "$limit")
+    local result
+    result=$(perform_query "$query" "$page" "$limit")
     if [[ $? -ne 0 ]]; then
         handle_error "Failed to query data: $query" 1
     fi
 
     echo "Query result:"
     echo "$result"
-
 }
 
 while [[ $# -gt 0 ]]; do 
     case "$1" in
-        --backup)
-            backup_name="$2"
-            backup_data "$backup_name"
-            shift 2
-            ;;
-        --restore)
-            backup_name="$2"
-            restore_data "$backup_name"
-            shift 2
+        --create-record)
+            collection="$2"
+            data="$3"
+            data_type="$4"
+            transaction_id="$5"
+            if [[ -z "$collection" || -z "$data" || -z "$data_type" ]]; then
+                handle_error "Usage: --create-record <collection> <data> <data_type> [transaction_id]" 1
+            fi
+            created_id="$(create_record "$collection" "$data" "$data_type" "$transaction_id")"
+            echo "New record created with ID: $created_id"
+            if [[ -n "$transaction_id" ]]; then
+                shift 5
+            else
+                shift 4
+            fi
             ;;
         --query)
-            query="$2"
             shift
-            page=${2:-1}
-            shift
-            limit=${2:-10}
-            query_data "$query" "$page" "$limit"
+            query="$1"
+            if [[ -z "$query" ]]; then
+                handle_error "Usage: --query \"<query>\"" 1
+            fi
+            perform_query "$query"
             shift
             ;;
         --async-query)
-            query="$2"
-            async_query_data "$query"
-            shift 2
+            shift
+            query="$1"
+            if [[ -z "$query" ]]; then
+                handle_error "Usage: --async-query \"<query>\"" 1
+            fi
+            submit_async_query "$query"
+            shift
             ;;
         --check-async-query)
-            query_id="$2"
+            shift
+            query_id="$1"
+            if [[ -z "$query_id" ]]; then
+                handle_error "Usage: --check-async-query <query_id>" 1
+            fi
             check_async_query "$query_id"
-            shift 2
+            shift
+            ;;
+        --get-async-query)
+            shift
+            query_id="$1"
+            if [[ -z "$query_id" ]]; then
+                handle_error "Usage: --get-async-query <query_id>" 1
+            fi
+            get_async_query "$query_id"
+            shift
+            ;;
+        --begin-transaction)
+            shift
+            txn_id="$1"
+            if [[ -z "$txn_id" ]]; then
+                handle_error "Usage: --begin-transaction <transaction_id>" 1
+            fi
+            begin_transaction "$txn_id"
+            shift
+            ;;
+        --commit-transaction)
+            shift
+            txn_id="$1"
+            if [[ -z "$txn_id" ]]; then
+                handle_error "Usage: --commit-transaction <transaction_id>" 1
+            fi
+            commit_transaction "$txn_id"
+            shift
+            ;;
+        --rollback-transaction)
+            shift
+            txn_id="$1"
+            if [[ -z "$txn_id" ]]; then
+                handle_error "Usage: --rollback-transaction <transaction_id>" 1
+            fi
+            rollback_transaction "$txn_id"
+            shift
+            ;;
+        --backup)
+            shift
+            backup_name="$1"
+            backup_data "$backup_name"
+            shift
+            ;;
+        --restore)
+            shift
+            backup_name="$1"
+            restore_data "$backup_name"
+            shift
             ;;
         *)
             echo "Invalid argument: $1"

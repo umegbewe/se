@@ -1,3 +1,5 @@
+#!/bin/bash
+
 function create_index() {
     local collection="$1"
     local field="$2"
@@ -9,18 +11,19 @@ function create_index() {
 
     local index_file="${index_dir}/${field}"
 
-    echo "$value:$record_file" >> "$index_file" || handle_error "Failed to create index entry: $record_id" 1
+    echo "$value:$record_file" >> "$index_file" || handle_error "Failed to create index entry for field: [$field] on record: [$record_file]" 1
 }
 
 function search_index() {
     local collection="$1"
     local record_id="$2"
 
-    local index_file="${DATA_DIR}/${collection}/index"
+    local index_file="${DATA_DIR}/${collection}/indexes/id"
 
     [[ ! -e "$index_file" ]] && handle_error "Index file does not exist: $index_file" 1
     
-    local record_file=$(grep "^$record_id:" "$index_file" | cut -d':' -f2)
+    local record_file
+    record_file=$(grep "^$record_id:" "$index_file" | cut -d':' -f2-)
 
     [[ -z "$record_file" ]] && handle_error "Record not found in index: $record_id" 1
 
@@ -29,13 +32,19 @@ function search_index() {
 
 function get_indexed_fields() {
     local collection="$1"
-    local index_dir="${DATA_DIR}/$collection/indexes"
+    local index_dir="${DATA_DIR}/${collection}/indexes"
 
     local indexed_fields=""
-    for index_file in "$index_dir"/*; do
-        local field=$(basename "$index_dir")
-        indexed_fields+=" $field"
-    done
+
+    if [[ -d "$index_dir" ]]; then
+        for index_file in "$index_dir"/*; do
+            if [[ -f "$index_file" ]]; then
+                local field
+                field=$(basename "$index_file")
+                indexed_fields+=" $field"
+            fi
+        done
+    fi
 
     echo "$indexed_fields"
 }
