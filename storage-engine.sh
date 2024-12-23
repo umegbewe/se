@@ -13,6 +13,7 @@ source "logging.sh"
 source "query_parser.sh"
 source "query-engine.sh"
 source "record_operations.sh"
+source "transaction_manager.sh"
 source "type-system/type_definitions.sh"
 source "type-system/type_validation.sh"
 source "type-system/type_utils.sh"
@@ -38,31 +39,78 @@ function load_collections {
 function backup_data() {
     local backup_name="$1"
 
+    if [[ -z "$backup_name" ]]; then
+        handle_error "Backup name is required" 1
+    fi
+
     create_backup "$backup_name"
+    if [[ $? -ne 0 ]]; then
+        handle_error "Failed to create backup: $backup_name" 1
+    fi
+
+    log_message "Backup created successfully: $backup_name"
 }
 
 function restore_data() {
     local backup_name="$1"
+    
+    if [[ -z "$backup_name" ]]; then
+        handle_error "Backup name is required" 1
+    fi
+
     restore_backup "$backup_name"
+    if [[ $? -ne 0 ]]; then
+        handle_error "Failed to restore backup: $backup_name" 1
+    fi
+
+    log_message "Data restored successfully from backup: $backup_name"
 }
 
 function async_query_data() {
     local query="$1"
 
-    submit_async_query "$query"
+    if [[ -z "$query" ]]; then
+        handle_error "Query is required" 1
+    fi
+
+    local query_id=$(submit_async_query "$query")
+    if [[ $? -ne 0 ]]; then
+        handle_error "Failed to submit async query: $query" 1
+    fi
+
+    echo "Async query submitted successfully: $query_id"
 }
 
 function check_async_query() {
     local query_id="$1"
 
-    check_async_query_status "$query_id"
+    if [[ -z "$query_id" ]]; then
+        handle_error "Query ID is required" 1
+    fi
+
+    local status=$(check_async_query_status "$query_id")
+    if [[ $? -ne 0 ]]; then
+        handle_error "Failed to check async query status: $query_id" 1
+    fi
+
+    echo "Async query status: $status"
 }
 
 
 function get_async_query() {
     local query_id="$1"
 
-    get_async_query_result "$query_id"
+    if [[ -z "$query_id" ]]; then
+        handle_error "Query ID is required" 1
+    fi
+
+    local result=$(get_async_query_result "$query_id")
+    if [[ $? -ne 0 ]]; then
+        handle_error "Failed to get async query result: $query_id" 1
+    fi
+
+    echo "Async query result: $result"
+    echo "$result"
 }
 
 
@@ -71,15 +119,19 @@ function query_data() {
     local collection=${2:-1}
     local limit=${3:-10}
 
-    perform_query "$query" "$page" "$limit"
+    if [[ -z "$query" ]]; then
+        handle_error "Query is required" 1
+    fi
+
+    local result=$(perform_query "$query" "$collection" "$limit")
+    if [[ $? -ne 0 ]]; then
+        handle_error "Failed to query data: $query" 1
+    fi
+
+    echo "Query result:"
+    echo "$result"
+
 }
-
-# function advanced_query_data() {
-#     local collection="$1"
-#     local query_condition="$2"
-
-#     perform_advanced_query "$collection" "$query_condition"
-# }
 
 while [[ $# -gt 0 ]]; do 
     case "$1" in
@@ -119,4 +171,4 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-#load_collections
+load_collections
